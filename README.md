@@ -34,23 +34,6 @@ MoveIt Servo
 PerturbationGenerator
 (inserta perturbaciones)
 ```
-
----
-
-# Estructura del Proyecto
-
-```
-xarm_perturbations/
-
-waypoint_generator.py
-controller_node.py
-perturbation_injector.py
-
-waypoints.csv
-
-tracking_data_lite6.csv
-```
-
 ---
 
 # Waypoints
@@ -85,7 +68,7 @@ Ejemplo:
 0.15,0.2,0.3
 ```
 
-Esta trayectoria genera un **movimiento rectangular en el plano XY con movimiento vertical en Z**.
+Esta trayectoria genera un movimiento rectangular en el plano XY con movimiento vertical en Z, lo cual simula un taladro que tiene que hacer 4 agujeros, formando un cuadrado de 0.2 m por 0.2m.
 
 Área de trabajo:
 
@@ -97,16 +80,6 @@ Esta trayectoria genera un **movimiento rectangular en el plano XY con movimient
      │        │
 0.0 ──●────────●
       0.15    0.35 → x
-```
-
-En cada vértice el robot realiza un movimiento vertical:
-
-```
-z = 0.30
-↓
-z = 0.20
-↑
-z = 0.30
 ```
 
 Cada waypoint se ejecuta cada **10 segundos**.
@@ -124,10 +97,10 @@ Lite6IKNode
 Responsabilidades:
 
 - Leer los waypoints
-- Calcular **cinemática inversa utilizando MoveIt**
+- Calcular cinemática inversa utilizando MoveIt
 - Publicar la posición cartesiana deseada y la configuración articular
 
-Este nodo requiere que la **configuración de MoveIt esté ejecutándose**, ya que la IK se calcula usando `pymoveit2`.
+Este nodo requiere que la configuración de MoveIt esté ejecutándose, ya que la IK se calcula usando `pymoveit2`.
 
 Topics publicados:
 
@@ -156,12 +129,6 @@ Ley de control:
 
 ```
 v = Kp * e + Kd * de/dt
-```
-
-donde
-
-```
-e = x_deseado − x_actual
 ```
 
 Los comandos se envían usando MoveIt Servo:
@@ -240,14 +207,6 @@ control_msgs/JointJog
 
 # Modos de Perturbación
 
-## Sin perturbaciones
-
-```
-mode = off
-```
-
----
-
 ## Perturbación senoidal
 
 Simula vibraciones periódicas:
@@ -291,18 +250,14 @@ Ejemplo:
 ros2 run xarm_perturbations perturbation_injector \
 --ros-args \
 -p mode:=gaussian \
--p noise_std_joint:=0.05
+-p noise_std_joint:=0.0001
 ```
 
 ---
 
 # Datos Registrados
 
-Los datos de seguimiento se guardan en:
-
-```
-tracking_data_lite6.csv
-```
+Los datos de seguimiento se guardan en un archivo csv.
 
 Variables almacenadas:
 
@@ -331,12 +286,11 @@ Estos datos se utilizan para:
 
 ## 1. Iniciar MoveIt + Servo
 
-Primero debe ejecutarse la configuración del robot.
-
-Ejemplo:
+Primero debe ejecutarse la configuración del robot en dos diferentes terminales,  con lo siguiente.
 
 ```
-ros2 launch xarm_moveit_config lite6_moveit.launch.py
+ros2 launch xarm_moveit_config lite6_moveit_realmove.launch.py robot_ip:=192.168.1.179
+ros2 launch xarm_moveit_servo lite6_moveit_servo_realmove.launch.py robot_ip:=192.168.1.179
 ```
 
 Esto inicia:
@@ -345,13 +299,12 @@ Esto inicia:
 - árbol TF
 - MoveIt Servo
 - solucionador de cinemática inversa
-
 ---
 
 ## 2. Ejecutar el generador de waypoints
 
 ```
-ros2 run xarm_perturbations waypoint_generator
+ros2 run lite6_demo_moveit lite6_demo 
 ```
 
 Publica:
@@ -366,7 +319,7 @@ Publica:
 ## 3. Ejecutar el controlador
 
 ```
-ros2 run xarm_perturbations controller_node
+ros2 run xarm_perturbations circle_maker 
 ```
 
 El controlador:
@@ -379,13 +332,11 @@ El controlador:
 
 ## 4. Ejecutar perturbaciones (opcional)
 
-Ejemplo:
-
 ```
 ros2 run xarm_perturbations perturbation_injector \
 --ros-args \
 -p mode:=gaussian \
--p noise_std_joint:=0.05
+-p noise_std_joint:=0.0001
 ```
 
 ---
@@ -397,14 +348,6 @@ El desempeño se evalúa usando **Root Mean Square Error (RMSE)**.
 ```
 RMSE = sqrt( (1/N) Σ (x_d − x)^2 )
 ```
-
-Ejemplo de salida:
-
-```
-Mode: CTC | RMSE: 0.094 m
-```
-
----
 
 # Tecnologías Utilizadas
 
@@ -419,16 +362,17 @@ pymoveit2
 
 # Objetivo del Proyecto
 
-Evaluar la **robustez de controladores robóticos bajo perturbaciones** comparando:
+Evaluar la robustez de controladores robóticos bajo perturbaciones comparando:
 
 - Control PD Cartesiano
 - Computed Torque Control (CTC)
 
-en tareas de seguimiento de trayectoria con el **xArm Lite6**.
+en tareas de seguimiento de trayectoria con el xArm Lite6.
 
 ---
 
-# Autor
-
-Experimento de Control Robótico  
-xArm Lite6 — Seguimiento de Trayectoria bajo Perturbaciones
+# Autores
+Jose Eduardo Sanchez Martinez		      IRS | A01738476
+Josue Ureña Valencia				IRS | A01738940
+César Arellano Arellano			      IRS | A00839373
+Rafael André Gamiz Salazar			IRS | A00838280

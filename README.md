@@ -128,7 +128,7 @@ Implementa dos estrategias de control.
 Ley de control:
 
 ```
-v = Kp * e + Kd * de/dt
+v = Kp * e + Kd * de
 ```
 
 Los comandos se envían usando MoveIt Servo:

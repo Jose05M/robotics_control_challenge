@@ -1,6 +1,6 @@
 # Control Robusto del xArm Lite6 con Perturbaciones (ROS2 + MoveIt Servo)
 
-Este proyecto implementa un sistema de **seguimiento de trayectorias para el robot xArm Lite6** utilizando **ROS2**, **MoveIt2** y **MoveIt Servo**.
+Este proyecto implementa un sistema de seguimiento de trayectorias para el robot xArm Lite6 utilizando ROS2, MoveIt2 y MoveIt Servo.
 
 El sistema evalúa el desempeño de dos controladores bajo perturbaciones artificiales:
 

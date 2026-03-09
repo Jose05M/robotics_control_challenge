@@ -1,4 +1,4 @@
-# Control Robusto del xArm Lite6 con Perturbaciones (ROS2 + MoveIt Servo)
+# Control del xArm Lite6 con Perturbaciones (ROS2)
 
 Este proyecto implementa un sistema de seguimiento de trayectorias para el robot xArm Lite6 utilizando ROS2 y la cinematica inversa implementada con MoveIt2.
 
@@ -50,8 +50,6 @@ Formato:
 x,y,z
 ```
 
-Ejemplo:
-
 ```
 0.15,0.2,0.3
 0.15,0.2,0.2
@@ -68,7 +66,7 @@ Ejemplo:
 0.15,0.2,0.3
 ```
 
-Esta trayectoria genera un movimiento rectangular en el plano XY con movimiento vertical en Z, lo cual simula un taladro que tiene que hacer 4 agujeros, formando un cuadrado de 0.2 m por 0.2m.
+Esta trayectoria genera un movimiento cuadrangular en el plano XY con movimiento vertical en Z, lo cual simula un taladro que tiene que hacer 4 agujeros, formando un cuadrado de 0.2 m por 0.2m.
 
 Área de trabajo:
 
@@ -82,7 +80,7 @@ Esta trayectoria genera un movimiento rectangular en el plano XY con movimiento 
       0.15    0.35 → x
 ```
 
-Cada waypoint se ejecuta cada **10 segundos**.
+Cada waypoint es procesado (publica posiciones cartesianas y articulares) cada 10 segundos.
 
 ---
 
@@ -223,7 +221,7 @@ sine_amp_joint
 sine_axis
 ```
 
-Ejemplo:
+Ejemplo de ejecución:
 
 ```
 ros2 run xarm_perturbations perturbation_injector \
@@ -244,7 +242,7 @@ Perturbación aleatoria:
 v ~ N(0, σ)
 ```
 
-Ejemplo:
+Ejemplo de perturbación:
 
 ```
 ros2 run xarm_perturbations perturbation_injector \
@@ -285,9 +283,8 @@ Estos datos se utilizan para:
 # Ejecución del Sistema
 
 ## 1. Iniciar MoveIt + Servo
-
-Primero debe ejecutarse la configuración del robot en dos diferentes terminales,  con lo siguiente.
-
+Primero debemos estar conectados con el Xarm Lite6 fisico.
+Despues, ejecutar la configuración del robot en dos diferentes terminales, con lo siguiente:
 ```
 ros2 launch xarm_moveit_config lite6_moveit_realmove.launch.py robot_ip:=192.168.1.179
 ros2 launch xarm_moveit_servo lite6_moveit_servo_realmove.launch.py robot_ip:=192.168.1.179
@@ -300,9 +297,10 @@ Esto inicia:
 - MoveIt Servo
 - solucionador de cinemática inversa
 ---
+Despues, mover el robot a una posicion predefinida, para garantizar que todas las pruebas tengan las mismas condiciones iniciales y evitar errores en la solucion de la IK de MoveIt.
 
 ## 2. Ejecutar el generador de waypoints
-
+En otra terminal, ejecutar el generador de waypoints con lo siguiente:
 ```
 ros2 run lite6_demo_moveit lite6_demo 
 ```
@@ -317,20 +315,22 @@ Publica:
 ---
 
 ## 3. Ejecutar el controlador
-
+En otra terminal, ejecutar el nodo controlador, con lo siguiente:
 ```
 ros2 run xarm_perturbations circle_maker 
 ```
 
 El controlador:
 
-- lee los estados articulares
-- calcula el control
+- lee las posiciones cartesianas deseadas
+- lee los estados articulares deseadas
+- calcula el control (PD/CTC)
 - envía comandos al robot usando MoveIt Servo
 
 ---
 
-## 4. Ejecutar perturbaciones (opcional)
+## 4. Ejecutar perturbaciones
+Para comprobar el comportamiento de los controladores bajo perturbaciones, mientras se esta ejecutando la trajectoria, en otra terminal, ejecutar el nodo de perturbaciones con lo siguiente:
 
 ```
 ros2 run xarm_perturbations perturbation_injector \

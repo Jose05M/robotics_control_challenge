@@ -4,7 +4,7 @@
   <name>xarm_perturbations_ctc</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="nezih-niegu@todo.todo">nezih-niegu</maintainer>
+  <maintainer email="eduardo.mtz1403@gmail.com">Jose Eduardo Sanchez</maintainer>
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>

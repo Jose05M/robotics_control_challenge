@@ -87,7 +87,7 @@ perturbation_injector
 - Ubuntu 22.04
 - ROS 2 Humble
 - [`xarm_ros2`](https://github.com/xArm-Developer/xarm_ros2) (UFACTORY), with xArm Lite 6 support and the `xarm_moveit_config` / `xarm_moveit_servo` packages
-- `pymoveit2` (used by `moveit_position` to solve the IK)
+- [`pymoveit2`](https://github.com/AndrejOrsula/pymoveit2) (used by `moveit_position` to solve the IK)
 - Python dependencies: `numpy`, `pynput` (`sudo apt install python3-pynput` or via `rosdep`)
 
 **Keyboard control requires X11:** `pd_ctc_controller` uses `pynput` to capture `p` (pause/resume) and `c` (toggle CTC/PD) globally from the terminal. `pynput` needs an **X11** session to hook the keyboard; under **Wayland** the keys aren't intercepted at all and just get typed as plain text into the terminal, with no effect on the node. Check your session with:
@@ -236,23 +236,3 @@ RMSE = sqrt( (1/N) Σ (x_d − x)^2 )
 
 - **Keyboard control and Wayland:** `pd_ctc_controller` depends on `pynput` to capture `p`/`c` from the terminal. Under a Wayland session this doesn't work at all (keys are typed as plain text instead of switching the node's mode) — use an X11 session instead, see [Requirements](#requirements).
 - **CTC tuned for the real robot:** `inertia_matrix`, `coriolis_torque` and `gravity_torque` aren't an exact physical model of the Lite 6, they're an approximation calibrated against the real robot's observed behavior. On simulated (`fake`) hardware — with no real inertia — CTC can saturate `tau_limit` and converge less cleanly; see the note in step 2 of [How to launch it](#how-to-launch-it). PD mode doesn't depend on this model and is more reliable for validating the pipeline in simulation.
-- **Perturbation and controller share a topic:** `perturbation_injector` and `pd_ctc_controller` both publish independently to `/servo_server/delta_joint_cmds` — the commands aren't summed, whichever arrives last wins. On the real robot this is visible as trembling while the perturbation is active, which is the intended way to observe the disturbance. In `fake` simulation, the lack of real inertia/damping can make this look calmer during the perturbation and produce a comparatively abrupt correction once it stops — a simulation artifact, not a change in the underlying control design.
-- **`waypoints.csv` path:** `moveit_position` resolves it relative to its own file location (`os.path.dirname(__file__)`), so it always reads the `waypoints.csv` packaged alongside the node, regardless of the directory `ros2 run` is launched from.
-
-## Technologies used
-
-ROS 2
-MoveIt 2
-MoveIt Servo
-Python
-NumPy
-pymoveit2
-
-## Project goal
-
-Evaluate the robustness of robotic controllers under perturbations by comparing:
-
-- Cartesian PD control
-- Computed Torque Control (CTC)
-
-on trajectory-tracking tasks with the xArm Lite 6.

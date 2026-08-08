@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'lite6_demo_moveit'
+package_name = 'xarm_perturbations_ctc'
 
 setup(
     name=package_name,
@@ -13,8 +13,8 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='ed',
-    maintainer_email='ed@todo.todo',
+    maintainer='Jose Eduardo Sanchez',
+    maintainer_email='eduardo.mtz1403@gmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     extras_require={
@@ -23,8 +23,11 @@ setup(
         ],
     },
     entry_points={
-        'console_scripts': [
-            'lite6_demo = lite6_demo_moveit.lite6_demo:main'
-        ],
+      	'console_scripts': [
+        'perturbation_injector = xarm_perturbations_ctc.perturbation_injector:main',
+        'pd_ctc_controller = xarm_perturbations_ctc.pd_ctc_controller:main',
+        'moveit_position = xarm_perturbations_ctc.moveit_position:main',
+    	],
     },
+
 )

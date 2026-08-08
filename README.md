@@ -19,11 +19,11 @@ El sistema está compuesto por tres nodos ROS2 y un archivo de trayectorias.
 waypoints.csv
       │
       ▼
-Lite6IKNode
+MoveitPositionNode
 (genera IK y publica posición deseada)
       │
       ▼
-CircleServoXArmLite6
+PdCtcController
 (controlador PD / CTC)
       │
       ▼
@@ -89,7 +89,7 @@ Cada waypoint es procesado (publica posiciones cartesianas y articulares) cada 1
 Nodo:
 
 ```
-Lite6IKNode
+MoveitPositionNode
 ```
 
 Responsabilidades:
@@ -114,7 +114,7 @@ Topics publicados:
 Nodo:
 
 ```
-CircleServoXArmLite6
+PdCtcController
 ```
 
 Implementa dos estrategias de control.
@@ -224,7 +224,7 @@ sine_axis
 Ejemplo de ejecución:
 
 ```
-ros2 run xarm_perturbations perturbation_injector \
+ros2 run xarm_perturbations_ctc perturbation_injector \
 --ros-args \
 -p mode:=sine \
 -p sine_freq_hz:=8 \
@@ -245,7 +245,7 @@ v ~ N(0, σ)
 Ejemplo de perturbación:
 
 ```
-ros2 run xarm_perturbations perturbation_injector \
+ros2 run xarm_perturbations_ctc perturbation_injector \
 --ros-args \
 -p mode:=gaussian \
 -p noise_std_joint:=0.0001
@@ -280,29 +280,88 @@ Estos datos se utilizan para:
 
 ---
 
+# Requisitos
+
+- Ubuntu 22.04
+- ROS 2 Humble
+- [`xarm_ros2`](https://github.com/xArm-Developer/xarm_ros2) (UFACTORY), con soporte para xArm Lite 6 y los paquetes `xarm_moveit_config` / `xarm_moveit_servo`
+- `pymoveit2` (lo usa `moveit_position` para resolver la IK)
+- Dependencias de Python: `numpy`, `pynput` (`sudo apt install python3-pynput` o vía `rosdep`)
+
+**Importante — control por teclado:** `pd_ctc_controller` usa `pynput` para capturar `p` (pausa/reanuda) y `c` (cambia entre CTC y PD) desde la terminal. `pynput` necesita una sesión **X11** para capturar el teclado de forma global; en **Wayland** las teclas no se interceptan y simplemente se escriben como texto plano en la terminal, sin ningún efecto sobre el nodo. Verifica tu sesión con:
+```
+echo $XDG_SESSION_TYPE
+```
+Si dice `wayland`, cierra sesión y en la pantalla de login selecciona **"Ubuntu on Xorg"** (en vez de la sesión normal) antes de volver a iniciar sesión.
+
+---
+
 # Ejecución del Sistema
 
 ## 1. Iniciar MoveIt + Servo
-Primero debemos estar conectados con el Xarm Lite6 fisico.
-Despues, ejecutar la configuración del robot en dos diferentes terminales, con lo siguiente:
+
+**Opción A — Robot físico:**
+
+Debemos estar conectados con el xArm Lite6 físico. Ejecutar la configuración del robot en dos terminales distintas:
 ```
 ros2 launch xarm_moveit_config lite6_moveit_realmove.launch.py robot_ip:=192.168.1.179
 ros2 launch xarm_moveit_servo lite6_moveit_servo_realmove.launch.py robot_ip:=192.168.1.179
 ```
+Ajusta `robot_ip` a la IP real del controlador del brazo, y mantén el botón de paro de emergencia al alcance.
 
-Esto inicia:
+**Opción B — Simulación (sin robot físico):**
+
+Si no tienes el brazo disponible, usa el equivalente en hardware simulado (`fake`), que no necesita `robot_ip`:
+```
+ros2 launch xarm_moveit_config lite6_moveit_fake.launch.py
+ros2 launch xarm_moveit_servo lite6_moveit_servo_fake.launch.py
+```
+Esto abre RViz con el modelo del robot en su pose home, listo para recibir comandos de MoveIt Servo. Es el modo recomendado para validar que el pipeline de nodos funciona antes de probar con el robot real (ver la nota sobre el CTC en simulación, más abajo).
+
+Cualquiera de las dos opciones deja corriendo:
 
 - modelo del robot
 - árbol TF
 - MoveIt Servo
 - solucionador de cinemática inversa
----
-Despues, mover el robot a una posicion predefinida, para garantizar que todas las pruebas tengan las mismas condiciones iniciales y evitar errores en la solucion de la IK de MoveIt.
 
-## 2. Ejecutar el generador de waypoints
+Después hay que mover el robot a una posición predefinida, para garantizar que todas las pruebas tengan las mismas condiciones iniciales y evitar errores en la solución de la IK de MoveIt.
+
+| Joint | Valor (°) |
+|---|---|
+| joint1 | 44 |
+| joint2 | 24 |
+| joint3 | 78 |
+| joint4 | -2 |
+| joint5 | 55 |
+| joint6 | 45 |
+
+Para llevar el robot físico ahí antes de correr las pruebas: en RViz, panel **MotionPlanning** → pestaña **Joints**, ahi podras mover los joints para colocarlos en la posicion correcta.
+
+---
+
+## 2. Ejecutar el controlador
+En otra terminal, ejecutar el nodo controlador, con lo siguiente:
+```
+ros2 run xarm_perturbations_ctc pd_ctc_controller 
+```
+
+El controlador:
+
+- lee las posiciones cartesianas deseadas
+- lee los estados articulares deseadas
+- calcula el control (PD/CTC)
+- envía comandos al robot usando MoveIt Servo
+
+> ⚠️ **Nota sobre CTC en simulación:** el modelo de dinámica que usa el control CTC (`inertia_matrix`, `coriolis_torque`, `gravity_torque` en `pd_ctc_controller.py`) es una aproximación ajustada empíricamente observando el comportamiento del **robot real**, no un modelo físico exacto. El hardware simulado (`fake`) no tiene inercia ni fricción real: aplica los comandos de velocidad/torque de forma prácticamente instantánea, sin el amortiguamiento que sí aporta el robot real. Por eso en simulación el CTC puede verse más brusco (saltos rápidos al inicio) o no terminar de converger a los waypoints si el error inicial satura `tau_limit`.
+
+> **Cambiar de PD a CTC** para realizar este cambio, basta con teclear `c` para cambiar de un controlador a otro, y con la tecla `p` se pone en pausa.
+---
+
+## 3. Ejecutar el generador de waypoints
 En otra terminal, ejecutar el generador de waypoints con lo siguiente:
 ```
-ros2 run lite6_demo_moveit lite6_demo 
+ros2 run xarm_perturbations_ctc moveit_position
 ```
 
 Publica:
@@ -314,60 +373,15 @@ Publica:
 
 ---
 
-## 3. Ejecutar el controlador
-En otra terminal, ejecutar el nodo controlador, con lo siguiente:
-```
-ros2 run xarm_perturbations circle_maker 
-```
-
-El controlador:
-
-- lee las posiciones cartesianas deseadas
-- lee los estados articulares deseadas
-- calcula el control (PD/CTC)
-- envía comandos al robot usando MoveIt Servo
-
----
-
 ## 4. Ejecutar perturbaciones
 Para comprobar el comportamiento de los controladores bajo perturbaciones, mientras se esta ejecutando la trajectoria, en otra terminal, ejecutar el nodo de perturbaciones con lo siguiente:
 
 ```
-ros2 run xarm_perturbations perturbation_injector \
+ros2 run xarm_perturbations_ctc perturbation_injector \
 --ros-args \
 -p mode:=gaussian \
 -p noise_std_joint:=0.0001
 ```
-
----
-
-# Métrica de Evaluación
-
-El desempeño se evalúa usando **Root Mean Square Error (RMSE)**.
-
-```
-RMSE = sqrt( (1/N) Σ (x_d − x)^2 )
-```
-
-# Tecnologías Utilizadas
-
-ROS2  
-MoveIt2  
-MoveIt Servo  
-Python  
-NumPy  
-pymoveit2  
-
----
-
-# Objetivo del Proyecto
-
-Evaluar la robustez de controladores robóticos bajo perturbaciones comparando:
-
-- Control PD Cartesiano
-- Computed Torque Control (CTC)
-
-en tareas de seguimiento de trayectoria con el xArm Lite6.
 
 ---
 

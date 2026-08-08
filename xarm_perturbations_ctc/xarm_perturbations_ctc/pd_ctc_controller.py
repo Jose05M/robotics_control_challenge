@@ -49,10 +49,10 @@ class RobotState(Enum):
     PAUSED = 2
 
 
-class CircleServoXArmLite6(Node):
+class PdCtcController(Node):
 
     def __init__(self):
-        super().__init__("circle_servo_xarm_lite6")
+        super().__init__("pd_ctc_controller")
 
         # -----------------------------------------------------
         # SUBSCRIPTIONS
@@ -104,7 +104,7 @@ class CircleServoXArmLite6(Node):
         # -----------------------------------------------------
 
         self.robot_state = RobotState.RUNNING
-        self.control_mode = "CTC"
+        self.control_mode = "PD"
 
         self.kp_cart = np.array([3.5, 3.5, 3.5])
         self.kd_cart = np.array([0.5, 0.5, 0.1])
@@ -494,9 +494,7 @@ class CircleServoXArmLite6(Node):
     # ---------------------------------------------------------
 
     def _start_keyboard(self):
-
         def on_press(key):
-
             try:
 
                 if key.char == 'p':
@@ -506,7 +504,7 @@ class CircleServoXArmLite6(Node):
                     else:
                         self.robot_state = RobotState.RUNNING
 
-                elif key.char == 'ñ':
+                elif key.char == 'c':
 
                     if self.control_mode == "CTC":
                         self.control_mode = "PD"
@@ -525,20 +523,14 @@ class CircleServoXArmLite6(Node):
 
 
 def main(args=None):
-
     rclpy.init(args=args)
-
-    node = CircleServoXArmLite6()
-
+    node = PdCtcController()
     try:
-
         rclpy.spin(node)
-
     except KeyboardInterrupt:
         pass
 
     finally:
-
         node.csv_file.close()
         node.destroy_node()
         rclpy.shutdown()

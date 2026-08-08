@@ -1,3 +1,4 @@
+import os
 import rclpy
 import csv
 from rclpy.node import Node
@@ -7,11 +8,10 @@ from sensor_msgs.msg import JointState
 import time
 
 
-class Lite6IKNode(Node):
+class MoveitPositionNode(Node):
 
     def __init__(self):
-
-        super().__init__("lite6_demo")
+        super().__init__("moveit_position")
 
         # MoveIt
         self.moveit2 = MoveIt2(
@@ -38,26 +38,20 @@ class Lite6IKNode(Node):
         self.run()
 
     def run(self):
-
-        path = "/home/ed/xarm_ws/src/xarm_perturbations/xarm_perturbations/waypoints.csv"
+        path = "/home/je/xarm_ws/src/robotics_control_challenge/xarm_perturbations_ctc/xarm_perturbations_ctc/waypoints.csv"
 
         try:
 
             with open(path, mode='r', encoding='utf-8-sig') as f:
-
                 reader = csv.reader(f)
 
                 for i, row in enumerate(reader):
-
                     if not row:
                         continue
 
                     raw = [float(v) for v in row]
-
                     pos = raw[:3]
-
                     quat = [1.0, 0.0, 0.0, 0.0]
-
                     self.get_logger().info(f"Testing point {i}: {pos}")
 
                     q_sol = self.moveit2.compute_ik(
@@ -66,7 +60,6 @@ class Lite6IKNode(Node):
                     )
 
                     if q_sol is not None:
-
                         q_vals = q_sol.position
 
                         self.get_logger().info(
@@ -81,7 +74,7 @@ class Lite6IKNode(Node):
                         self.get_logger().info(
                         f"Publicado en /posicion_deseada -> "
                         f"[{p.x:.3f}, {p.y:.3f}, {p.z:.3f}]"
-                    )
+                        )
 
                         # publicar joints
                         j = JointState()
@@ -99,7 +92,6 @@ class Lite6IKNode(Node):
                         )
 
                     else:
-
                         self.get_logger().warn(
                             f"IK falló para waypoint {i}: {pos}"
                         )
@@ -111,20 +103,14 @@ class Lite6IKNode(Node):
                     time.sleep(10)
 
         except FileNotFoundError:
-
             self.get_logger().error("Archivo CSV no encontrado")
 
 
 def main():
-
     rclpy.init()
-
-    node = Lite6IKNode()
-
+    node = MoveitPositionNode()
     node.destroy_node()
-
     rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()

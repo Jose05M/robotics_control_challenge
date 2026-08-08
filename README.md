@@ -1,333 +1,151 @@
-# Control del xArm Lite6 con Perturbaciones (ROS2)
+# robotics_control_challenge
 
-Este proyecto implementa un sistema de seguimiento de trayectorias para el robot xArm Lite6 utilizando ROS2 y la cinematica inversa implementada con MoveIt2.
+ROS 2 package (Python, `ament_python`) developed for **Robotics Control Challenge 4.1** of the *TE3001B – Fundamentación de Robótica* course (Tecnológico de Monterrey, Campus Monterrey). It implements a trajectory-tracking system for the **xArm Lite 6**, comparing two controllers — **Cartesian PD** and **Computed Torque Control (CTC)** — while injecting artificial perturbations (sinusoidal and Gaussian) to evaluate tracking robustness and stability. Inverse kinematics is solved with **MoveIt 2** (`pymoveit2`).
 
-El sistema evalúa el desempeño de dos controladores bajo perturbaciones artificiales:
+**Team: RJ CREW**
 
-- Control **PD Cartesiano**
-- Control **Computed Torque Control (CTC)**
+| Student | ID |
+|---|---|
+| Jose Eduardo Sanchez Martinez | A01738476 |
+| Josue Ureña Valencia | A01738940 |
+| Rafael André Gamiz Salazar | A00838280 |
+| César Arellano Arellano | A00839373 |
 
-Se inyectan perturbaciones para evaluar la robustez y estabilidad del seguimiento de trayectoria.
+Instructor: Nezih Nieto Gutiérrez
 
----
+## Package contents
 
-# Arquitectura del Sistema
+```
+robotics_control_challenge/
+├── xarm_perturbations_ctc/
+│   ├── moveit_position.py       # Node: reads waypoints.csv, solves IK via MoveIt2, publishes desired pose/joints
+│   ├── pd_ctc_controller.py     # Node: dual-mode controller (Cartesian PD / joint-space CTC), keyboard control
+│   ├── perturbation_injector.py # Node: injects sine/gaussian perturbations on /servo_server/delta_joint_cmds
+│   ├── waypoints.csv            # Cartesian waypoints (x,y,z) defining the trajectory
+│   └── __init__.py
+├── resource/xarm_perturbations_ctc
+├── test/
+├── package.xml
+├── setup.py / setup.cfg
+├── Graficas_generador/                       # Plotting scripts for the logged tracking data
+├── PD_CTC_Controller_csv/                    # Example tracking CSVs (PD/CTC, with/without perturbations)
+└── Robotics Control Challenge 4.1_Equipo5.pdf # Full lab report
+```
 
-El sistema está compuesto por tres nodos ROS2 y un archivo de trayectorias.
+## How it works
+
+The system is made up of three ROS 2 nodes and a waypoint file, described in detail in `Robotics Control Challenge 4.1_Equipo5.pdf`:
 
 ```
 waypoints.csv
       │
       ▼
-MoveitPositionNode
-(genera IK y publica posición deseada)
+moveit_position
+(solves IK, publishes desired pose)
       │
       ▼
-PdCtcController
-(controlador PD / CTC)
+pd_ctc_controller
+(PD / CTC controller)
       │
       ▼
 MoveIt Servo
-(capa de ejecución del robot)
+(robot execution layer)
       ▲
       │
-PerturbationGenerator
-(inserta perturbaciones)
-```
----
-
-# Waypoints
-
-La trayectoria del robot está definida en:
-
-```
-waypoints.csv
+perturbation_injector
+(injects perturbations)
 ```
 
-Formato:
+1. **Waypoint generator + inverse kinematics** — `moveit_position` reads `waypoints.csv`, solves IK for each point via `pymoveit2`, and publishes both the Cartesian target (`/posicion_deseada`, `geometry_msgs/Point`) and the joint target (`/q_deseada`, `sensor_msgs/JointState`).
 
-```
-x,y,z
-```
+   The trajectory traces a square motion in the XY plane with vertical movement in Z, simulating a drill that has to make 4 holes, forming a 0.2 m × 0.2 m square. Work area:
 
-```
-0.15,0.2,0.3
-0.15,0.2,0.2
-0.15,0.2,0.3
-0.15,0,0.3
-0.15,0,0.2
-0.15,0,0.3
-0.35,0,0.3
-0.35,0,0.2
-0.35,0,0.3
-0.35,0.2,0.3
-0.35,0.2,0.2
-0.35,0.2,0.3
-0.15,0.2,0.3
-```
+   ```
+         y
+         ↑
+   0.2 ──●────────●
+        │        │
+        │        │
+   0.0 ──●────────●
+         0.15    0.35 → x
+   ```
 
-Esta trayectoria genera un movimiento cuadrangular en el plano XY con movimiento vertical en Z, lo cual simula un taladro que tiene que hacer 4 agujeros, formando un cuadrado de 0.2 m por 0.2m.
+   Each waypoint is processed — publishing both the Cartesian and joint targets — every 10 seconds, which also serves as the dwell period used to evaluate steady-state error.
 
-Área de trabajo:
+2. **PD / CTC controller** — `pd_ctc_controller` implements two selectable control laws:
+   - **Cartesian PD**: `v = Kp*e + Kd*de`, tracking `/posicion_deseada` with the end-effector pose read from TF (`link_base → link_eef`), published as `geometry_msgs/TwistStamped` on `/servo_server/delta_twist_cmds`.
+   - **Computed Torque Control (CTC)**: nonlinear joint-space control `τ = M(q)v + C(q,q̇) + G(q)`, with `v = q̈d + Kd(q̇d − q̇) + Kp(qd − q)`, tracking `/q_deseada` along a quintic joint trajectory generated between consecutive waypoints. Robot dynamics are approximated with `inertia_matrix(q)`, `coriolis_torque(q, qd)` and `gravity_torque(q)`, and commands are published as `control_msgs/JointJog` on `/servo_server/delta_joint_cmds`.
 
-```
-      y
-      ↑
-0.2 ──●────────●
-     │        │
-     │        │
-0.0 ──●────────●
-      0.15    0.35 → x
-```
+   Toggle between modes with `c` (CTC ⇄ PD) and pause/resume with `p`, from the terminal running `pd_ctc_controller`. **Both shortcuts require an X11 session** — see [Requirements](#requirements).
 
-Cada waypoint es procesado (publica posiciones cartesianas y articulares) cada 10 segundos.
+3. **Perturbation injection** — `perturbation_injector` independently publishes a sine or Gaussian perturbation on the `/servo_server/delta_joint_cmds` topic.
 
----
+`pd_ctc_controller` also logs to `tracking_data_lite6.csv` the full run history — `time`, `x_d/y_d/z_d`, `x/y/z`, `vx_cmd/vy_cmd/vz_cmd`, `q1..q6`, `qd1..qd6`, `qref1..qref6`, `cmd1..cmd6`, `mode`, `perturbation` — used for RMSE analysis and controller comparison. See `Graficas_generador/` for the plotting scripts and `PD_CTC_Controller_csv/` for example runs.
 
-# Nodo 1 — Generador de Waypoints + Cinemática Inversa
-
-Nodo:
-
-```
-MoveitPositionNode
-```
-
-Responsabilidades:
-
-- Leer los waypoints
-- Calcular cinemática inversa utilizando MoveIt
-- Publicar la posición cartesiana deseada y la configuración articular
-
-Este nodo requiere que la configuración de MoveIt esté ejecutándose, ya que la IK se calcula usando `pymoveit2`.
-
-Topics publicados:
-
-```
-/posicion_deseada  → geometry_msgs/Point
-/q_deseada         → sensor_msgs/JointState
-```
-
----
-
-# Nodo 2 — Controlador
-
-Nodo:
-
-```
-PdCtcController
-```
-
-Implementa dos estrategias de control.
-
----
-
-## Control PD Cartesiano
-
-Ley de control:
-
-```
-v = Kp * e + Kd * de
-```
-
-Los comandos se envían usando MoveIt Servo:
-
-```
-/servo_server/delta_twist_cmds
-```
-
-Tipo de mensaje:
-
-```
-geometry_msgs/TwistStamped
-```
-
----
-
-## Computed Torque Control (CTC)
-
-Control no lineal en espacio articular:
-
-```
-τ = M(q)v + C(q,q̇) + G(q)
-```
-
-donde
-
-```
-v = q̈d + Kd(q̇d − q̇) + Kp(qd − q)
-```
-
-Las dinámicas del robot se aproximan mediante:
-
-```
-inertia_matrix(q)
-coriolis_torque(q, qd)
-gravity_torque(q)
-```
-
-Los comandos se envían mediante:
-
-```
-/servo_server/delta_joint_cmds
-```
-
-Tipo de mensaje:
-
-```
-control_msgs/JointJog
-```
-
----
-
-# Nodo 3 — Generador de Perturbaciones
-
-Nodo:
-
-```
-PerturbationGenerator
-```
-
-Este nodo inyecta perturbaciones en los comandos de control.
-
-Topic publicado:
-
-```
-/servo_server/delta_joint_cmds
-```
-
-Tipo de mensaje:
-
-```
-control_msgs/JointJog
-```
-
----
-
-# Modos de Perturbación
-
-## Perturbación senoidal
-
-Simula vibraciones periódicas:
-
-```
-v = A sin(2πft)
-```
-
-Parámetros:
-
-```
-sine_freq_hz
-sine_amp_joint
-sine_axis
-```
-
-Ejemplo de ejecución:
-
-```
-ros2 run xarm_perturbations_ctc perturbation_injector \
---ros-args \
--p mode:=sine \
--p sine_freq_hz:=8 \
--p sine_amp_joint:=0.1 \
--p sine_axis:=2
-```
-
----
-
-## Ruido gaussiano
-
-Perturbación aleatoria:
-
-```
-v ~ N(0, σ)
-```
-
-Ejemplo de perturbación:
-
-```
-ros2 run xarm_perturbations_ctc perturbation_injector \
---ros-args \
--p mode:=gaussian \
--p noise_std_joint:=0.0001
-```
-
----
-
-# Datos Registrados
-
-Los datos de seguimiento se guardan en un archivo csv.
-
-Variables almacenadas:
-
-```
-time
-x_d, y_d, z_d
-x, y, z
-vx_cmd, vy_cmd, vz_cmd
-q1..q6
-qd1..qd6
-qref1..qref6
-cmd1..cmd6
-mode
-perturbation
-```
-
-Estos datos se utilizan para:
-
-- análisis de seguimiento de trayectoria
-- cálculo de RMSE
-- comparación entre controladores
-
----
-
-# Requisitos
+## Requirements
 
 - Ubuntu 22.04
 - ROS 2 Humble
-- [`xarm_ros2`](https://github.com/xArm-Developer/xarm_ros2) (UFACTORY), con soporte para xArm Lite 6 y los paquetes `xarm_moveit_config` / `xarm_moveit_servo`
-- `pymoveit2` (lo usa `moveit_position` para resolver la IK)
-- Dependencias de Python: `numpy`, `pynput` (`sudo apt install python3-pynput` o vía `rosdep`)
+- [`xarm_ros2`](https://github.com/xArm-Developer/xarm_ros2) (UFACTORY), with xArm Lite 6 support and the `xarm_moveit_config` / `xarm_moveit_servo` packages
+- `pymoveit2` (used by `moveit_position` to solve the IK)
+- Python dependencies: `numpy`, `pynput` (`sudo apt install python3-pynput` or via `rosdep`)
 
-**Importante — control por teclado:** `pd_ctc_controller` usa `pynput` para capturar `p` (pausa/reanuda) y `c` (cambia entre CTC y PD) desde la terminal. `pynput` necesita una sesión **X11** para capturar el teclado de forma global; en **Wayland** las teclas no se interceptan y simplemente se escriben como texto plano en la terminal, sin ningún efecto sobre el nodo. Verifica tu sesión con:
-```
+**Keyboard control requires X11:** `pd_ctc_controller` uses `pynput` to capture `p` (pause/resume) and `c` (toggle CTC/PD) globally from the terminal. `pynput` needs an **X11** session to hook the keyboard; under **Wayland** the keys aren't intercepted at all and just get typed as plain text into the terminal, with no effect on the node. Check your session with:
+
+```bash
 echo $XDG_SESSION_TYPE
 ```
-Si dice `wayland`, cierra sesión y en la pantalla de login selecciona **"Ubuntu on Xorg"** (en vez de la sesión normal) antes de volver a iniciar sesión.
 
----
+If it prints `wayland`, log out and pick **"Ubuntu on Xorg"** at the login screen (instead of the default session) before logging back in.
 
-# Ejecución del Sistema
+## Workspace installation / setup
 
-## 1. Iniciar MoveIt + Servo
+Follow the workspace installation/setup guide (cloning `xarm_ros2`, `rosdep`, `colcon build`, etc.) described in [lite6_demo_moveit/README.md](https://github.com/Jose05M/lite6_demo_moveit/blob/main/README.md).
 
-**Opción A — Robot físico:**
+Once the workspace is set up, place (or clone) this `robotics_control_challenge` repository inside `~/xarm_ws/src/` and build it:
 
-Debemos estar conectados con el xArm Lite6 físico. Ejecutar la configuración del robot en dos terminales distintas:
+```bash
+cd ~/xarm_ws/
+colcon build --packages-select xarm_perturbations_ctc
+source install/setup.bash
 ```
+
+## How to launch it
+
+### 1. Bring up MoveIt + Servo
+
+**Option A — physical robot:**
+
+Make sure the xArm Lite 6 is connected and reachable, then run its configuration in two separate terminals:
+
+```bash
 ros2 launch xarm_moveit_config lite6_moveit_realmove.launch.py robot_ip:=192.168.1.179
 ros2 launch xarm_moveit_servo lite6_moveit_servo_realmove.launch.py robot_ip:=192.168.1.179
 ```
-Ajusta `robot_ip` a la IP real del controlador del brazo, y mantén el botón de paro de emergencia al alcance.
 
-**Opción B — Simulación (sin robot físico):**
+Adjust `robot_ip` to the arm controller's actual IP, and always keep the emergency stop button within reach.
 
-Si no tienes el brazo disponible, usa el equivalente en hardware simulado (`fake`), que no necesita `robot_ip`:
-```
+**Option B — simulation (no physical robot):**
+
+If the arm isn't available, use the simulated/fake-hardware equivalent instead (no `robot_ip` needed):
+
+```bash
 ros2 launch xarm_moveit_config lite6_moveit_fake.launch.py
 ros2 launch xarm_moveit_servo lite6_moveit_servo_fake.launch.py
 ```
-Esto abre RViz con el modelo del robot en su pose home, listo para recibir comandos de MoveIt Servo. Es el modo recomendado para validar que el pipeline de nodos funciona antes de probar con el robot real (ver la nota sobre el CTC en simulación, más abajo).
 
-Cualquiera de las dos opciones deja corriendo:
+This opens RViz with the robot model ready to receive MoveIt Servo commands. It's the recommended way to validate that the node pipeline works end-to-end before testing on the real robot.
 
-- modelo del robot
-- árbol TF
+Either option leaves running:
+
+- the robot model
+- the TF tree
 - MoveIt Servo
-- solucionador de cinemática inversa
+- the inverse kinematics solver
 
-Después hay que mover el robot a una posición predefinida, para garantizar que todas las pruebas tengan las mismas condiciones iniciales y evitar errores en la solución de la IK de MoveIt.
+Then move the robot to the predefined starting pose, so every test run starts from identical initial conditions and to avoid MoveIt IK solver errors:
 
-| Joint | Valor (°) |
+| Joint | Value (°) |
 |---|---|
 | joint1 | 44 |
 | joint2 | 24 |
@@ -336,57 +154,105 @@ Después hay que mover el robot a una posición predefinida, para garantizar que
 | joint5 | 55 |
 | joint6 | 45 |
 
-Para llevar el robot físico ahí antes de correr las pruebas: en RViz, panel **MotionPlanning** → pestaña **Joints**, ahi podras mover los joints para colocarlos en la posicion correcta.
+In RViz: **MotionPlanning** panel → **Joints** tab, and move each joint slider to the values above.
 
----
+### 2. Run the controller
 
-## 2. Ejecutar el controlador
-En otra terminal, ejecutar el nodo controlador, con lo siguiente:
+In another terminal:
+
+```bash
+ros2 run xarm_perturbations_ctc pd_ctc_controller
 ```
-ros2 run xarm_perturbations_ctc pd_ctc_controller 
-```
 
-El controlador:
+The controller:
 
-- lee las posiciones cartesianas deseadas
-- lee los estados articulares deseadas
-- calcula el control (PD/CTC)
-- envía comandos al robot usando MoveIt Servo
+- reads the desired Cartesian positions
+- reads the desired joint states
+- computes the control law (PD/CTC)
+- sends commands to the robot through MoveIt Servo
 
-> ⚠️ **Nota sobre CTC en simulación:** el modelo de dinámica que usa el control CTC (`inertia_matrix`, `coriolis_torque`, `gravity_torque` en `pd_ctc_controller.py`) es una aproximación ajustada empíricamente observando el comportamiento del **robot real**, no un modelo físico exacto. El hardware simulado (`fake`) no tiene inercia ni fricción real: aplica los comandos de velocidad/torque de forma prácticamente instantánea, sin el amortiguamiento que sí aporta el robot real. Por eso en simulación el CTC puede verse más brusco (saltos rápidos al inicio) o no terminar de converger a los waypoints si el error inicial satura `tau_limit`.
+> ⚠️ **CTC-in-simulation note:** the dynamics model used by the CTC controller (`inertia_matrix`, `coriolis_torque`, `gravity_torque` in `pd_ctc_controller.py`) is an approximation tuned empirically against the **real robot's** observed behavior, not an exact physical model. Simulated (`fake`) hardware has no real inertia or friction — it applies velocity/torque commands almost instantly, without the damping the real robot provides. Because of this, CTC can look more abrupt in simulation (fast initial jumps) or fail to fully converge to the waypoints if the initial error saturates `tau_limit`.
 
-> **Cambiar de PD a CTC** para realizar este cambio, basta con teclear `c` para cambiar de un controlador a otro, y con la tecla `p` se pone en pausa.
----
+> **Switching between PD and CTC:** press `c` on that terminal to toggle between controllers, and `p` to pause/resume (requires X11 — see [Requirements](#requirements)).
 
-## 3. Ejecutar el generador de waypoints
-En otra terminal, ejecutar el generador de waypoints con lo siguiente:
-```
+### 3. Run the waypoint generator
+
+In another terminal:
+
+```bash
 ros2 run xarm_perturbations_ctc moveit_position
 ```
 
-Publica:
+Publishes:
 
 ```
 /posicion_deseada
 /q_deseada
 ```
 
----
+### 4. (Optional) Inject perturbations
 
-## 4. Ejecutar perturbaciones
-Para comprobar el comportamiento de los controladores bajo perturbaciones, mientras se esta ejecutando la trajectoria, en otra terminal, ejecutar el nodo de perturbaciones con lo siguiente:
+To test the controllers' behavior under perturbations while the trajectory is running, in a third terminal:
+
+**Sinusoidal** — simulates periodic vibration:
 
 ```
+v = A sin(2πft)
+```
+
+Tunable via `sine_freq_hz`, `sine_amp_joint`, `sine_axis`:
+
+```bash
+ros2 run xarm_perturbations_ctc perturbation_injector \
+--ros-args \
+-p mode:=sine \
+-p sine_freq_hz:=8 \
+-p sine_amp_joint:=0.1 \
+-p sine_axis:=2
+```
+
+**Gaussian noise** — random perturbation:
+
+```
+v ~ N(0, σ)
+```
+
+```bash
 ros2 run xarm_perturbations_ctc perturbation_injector \
 --ros-args \
 -p mode:=gaussian \
 -p noise_std_joint:=0.0001
 ```
 
----
+## Evaluation metric
 
-# Autores
-Jose Eduardo Sanchez Martinez		      IRS | A01738476;
-Josue Ureña Valencia				IRS | A01738940;
-César Arellano Arellano			      IRS | A00839373;
-Rafael André Gamiz Salazar			IRS | A00838280;
+Performance is evaluated using **Root Mean Square Error (RMSE)**:
+
+```
+RMSE = sqrt( (1/N) Σ (x_d − x)^2 )
+```
+
+## Known notes / limitations
+
+- **Keyboard control and Wayland:** `pd_ctc_controller` depends on `pynput` to capture `p`/`c` from the terminal. Under a Wayland session this doesn't work at all (keys are typed as plain text instead of switching the node's mode) — use an X11 session instead, see [Requirements](#requirements).
+- **CTC tuned for the real robot:** `inertia_matrix`, `coriolis_torque` and `gravity_torque` aren't an exact physical model of the Lite 6, they're an approximation calibrated against the real robot's observed behavior. On simulated (`fake`) hardware — with no real inertia — CTC can saturate `tau_limit` and converge less cleanly; see the note in step 2 of [How to launch it](#how-to-launch-it). PD mode doesn't depend on this model and is more reliable for validating the pipeline in simulation.
+- **Perturbation and controller share a topic:** `perturbation_injector` and `pd_ctc_controller` both publish independently to `/servo_server/delta_joint_cmds` — the commands aren't summed, whichever arrives last wins. On the real robot this is visible as trembling while the perturbation is active, which is the intended way to observe the disturbance. In `fake` simulation, the lack of real inertia/damping can make this look calmer during the perturbation and produce a comparatively abrupt correction once it stops — a simulation artifact, not a change in the underlying control design.
+- **`waypoints.csv` path:** `moveit_position` resolves it relative to its own file location (`os.path.dirname(__file__)`), so it always reads the `waypoints.csv` packaged alongside the node, regardless of the directory `ros2 run` is launched from.
+
+## Technologies used
+
+ROS 2
+MoveIt 2
+MoveIt Servo
+Python
+NumPy
+pymoveit2
+
+## Project goal
+
+Evaluate the robustness of robotic controllers under perturbations by comparing:
+
+- Cartesian PD control
+- Computed Torque Control (CTC)
+
+on trajectory-tracking tasks with the xArm Lite 6.

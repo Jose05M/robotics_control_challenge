@@ -190,7 +190,7 @@ Publishes:
 /q_deseada
 ```
 
-### 4. (Optional) Inject perturbations
+### 4. Inject perturbations
 
 To test the controllers' behavior under perturbations while the trajectory is running, in a third terminal:
 
